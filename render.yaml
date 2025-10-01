@@ -2,7 +2,7 @@ services:
   - type: web
     name: moniconverter-api
     runtime: node
-    buildCommand: npm install --platform=linux --arch=x64 sharp && npm install
+    buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
