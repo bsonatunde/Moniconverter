@@ -2,7 +2,16 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { PDFDocument } = require('pdf-lib');
-const sharp = require('sharp');
+
+// Try to load Sharp, fallback to Jimp if Sharp fails
+let sharp;
+try {
+  sharp = require('sharp');
+} catch (error) {
+  console.warn('Sharp not available, using Jimp as fallback for image processing');
+  sharp = null;
+}
+
 const Jimp = require('jimp');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
@@ -26,14 +35,25 @@ router.post('/image-to-pdf', async (req, res) => {
       const outputPath = path.join(path.dirname(inputPath), `converted-${Date.now()}.pdf`);
 
       try {
-        // Get image metadata
-        const metadata = await sharp(inputPath).metadata();
-        const { width, height, format } = metadata;
+        let imageBuffer, width, height;
 
-        // Read and process the image
-        const imageBuffer = await sharp(inputPath)
-          .jpeg({ quality: 90 })
-          .toBuffer();
+        if (sharp) {
+          // Use Sharp for better performance
+          const metadata = await sharp(inputPath).metadata();
+          width = metadata.width;
+          height = metadata.height;
+
+          imageBuffer = await sharp(inputPath)
+            .jpeg({ quality: 90 })
+            .toBuffer();
+        } else {
+          // Fallback to Jimp
+          const image = await Jimp.read(inputPath);
+          width = image.getWidth();
+          height = image.getHeight();
+
+          imageBuffer = await image.quality(90).getBufferAsync(Jimp.MIME_JPEG);
+        }
 
         // Create PDF document
         const pdfDoc = await PDFDocument.create();
@@ -362,11 +382,20 @@ router.post('/image-to-text', async (req, res) => {
           // Preprocess image for better OCR results
           const processedImagePath = path.join(path.dirname(inputPath), `processed-${Date.now()}.png`);
           
-          await sharp(inputPath)
-            .resize(null, 2000, { withoutEnlargement: true })
-            .sharpen()
-            .png({ quality: 100 })
-            .toFile(processedImagePath);
+          if (sharp) {
+            await sharp(inputPath)
+              .resize(null, 2000, { withoutEnlargement: true })
+              .sharpen()
+              .png({ quality: 100 })
+              .toFile(processedImagePath);
+          } else {
+            // Fallback to Jimp for preprocessing
+            const image = await Jimp.read(inputPath);
+            if (image.getHeight() > 2000) {
+              image.resize(Jimp.AUTO, 2000);
+            }
+            await image.writeAsync(processedImagePath);
+          }
 
           const { createWorker } = require('tesseract.js');
           
