@@ -116,7 +116,16 @@ router.post('/watermark', async (req, res) => {
         const pdfBytes = fs.readFileSync(inputPath);
         const pdf = await PDFDocument.load(pdfBytes);
         const pages = pdf.getPages();
+
+        if (pages.length === 0) {
+          throw new Error('PDF has no pages');
+        }
+
         const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+        if (!font) {
+          throw new Error('Failed to embed font');
+        }
 
         // Convert hex color to RGB
         const hexToRgb = (hex) => {
@@ -167,8 +176,7 @@ router.post('/watermark', async (req, res) => {
             size: parseInt(fontSize),
             font: font,
             color: rgb(textColor.r, textColor.g, textColor.b),
-            opacity: parseFloat(opacity),
-            rotate: { type: 'degrees', angle: -45 }
+            opacity: parseFloat(opacity)
           });
         });
 
@@ -234,6 +242,10 @@ router.post('/page-numbers', async (req, res) => {
         const pdf = await PDFDocument.load(pdfBytes);
         const pages = pdf.getPages();
         const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+        if (!font) {
+          throw new Error('Failed to embed font');
+        }
 
         // Convert hex color to RGB
         const hexToRgb = (hex) => {

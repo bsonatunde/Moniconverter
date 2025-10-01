@@ -57,13 +57,13 @@ router.post('/image-to-pdf', async (req, res) => {
 
         // Create PDF document
         const pdfDoc = await PDFDocument.create();
-        const image = await pdfDoc.embedJpg(imageBuffer);
+        const pdfImage = await pdfDoc.embedJpg(imageBuffer);
         
         // Create page with original dimensions
         const page = pdfDoc.addPage([width, height]);
         
         // Draw image on page
-        page.drawImage(image, {
+        page.drawImage(pdfImage, {
           x: 0,
           y: 0,
           width,
