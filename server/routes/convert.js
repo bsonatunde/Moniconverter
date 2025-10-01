@@ -15,7 +15,6 @@ try {
 const Jimp = require('jimp');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
-const pdf = require('html-pdf');
 
 const router = express.Router();
 
@@ -117,47 +116,37 @@ router.post('/word-to-pdf', async (req, res) => {
         const result = await mammoth.extractRawText({ path: inputPath });
         const text = result.value;
 
-        // Create HTML content
-        const htmlContent = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-              p { margin: 10px 0; }
-            </style>
-          </head>
-          <body>
-            ${text.split('\n').map(line => `<p>${line}</p>`).join('')}
-          </body>
-          </html>
-        `;
+        // Create PDF using PDFKit
+        const PDFDocument = require('pdfkit');
+        const doc = new PDFDocument({
+          size: 'A4',
+          margin: 50
+        });
 
-        // Convert HTML to PDF
-        const options = {
-          format: 'A4',
-          orientation: 'portrait',
-          border: {
-            top: '0.5in',
-            right: '0.5in',
-            bottom: '0.5in',
-            left: '0.5in'
-          }
-        };
+        doc.pipe(fs.createWriteStream(outputPath));
+        
+        // Add text content
+        doc.fontSize(12).text(text, {
+          width: 500,
+          align: 'left'
+        });
+        
+        doc.end();
 
-        pdf.create(htmlContent, options).toFile(outputPath, (err, result) => {
-          if (err) throw err;
+        // Wait for the PDF to be written
+        await new Promise((resolve, reject) => {
+          doc.on('end', resolve);
+          doc.on('error', reject);
+        });
 
-          // Clean up input file
-          fs.unlinkSync(inputPath);
+        // Clean up input file
+        fs.unlinkSync(inputPath);
 
-          res.json({
-            success: true,
-            message: 'Word document converted to PDF successfully',
-            downloadUrl: `/uploads/${path.basename(outputPath)}`,
-            filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
-          });
+        res.json({
+          success: true,
+          message: 'Word document converted to PDF successfully',
+          downloadUrl: `/uploads/${path.basename(outputPath)}`,
+          filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
         });
 
       } catch (error) {
@@ -193,59 +182,47 @@ router.post('/excel-to-pdf', async (req, res) => {
         const workbook = XLSX.readFile(inputPath);
         const sheetNames = workbook.SheetNames;
         
-        let htmlContent = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
-              table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-              th { background-color: #f2f2f2; font-weight: bold; }
-              .sheet-title { font-size: 18px; font-weight: bold; margin: 20px 0 10px 0; }
-            </style>
-          </head>
-          <body>
-        `;
-
-        // Convert each sheet to HTML table
+        // Convert each sheet to text
+        let textContent = '';
         sheetNames.forEach((sheetName, index) => {
           const worksheet = workbook.Sheets[sheetName];
-          const htmlTable = XLSX.utils.sheet_to_html(worksheet);
+          const csv = XLSX.utils.sheet_to_csv(worksheet);
           
-          htmlContent += `
-            <div class="sheet-title">Sheet: ${sheetName}</div>
-            ${htmlTable}
-          `;
+          textContent += `Sheet: ${sheetName}\n\n${csv}\n\n`;
         });
 
-        htmlContent += '</body></html>';
+        // Create PDF using PDFKit
+        const PDFDocument = require('pdfkit');
+        const doc = new PDFDocument({
+          size: 'A4',
+          layout: 'landscape',
+          margin: 50
+        });
 
-        // Convert HTML to PDF
-        const options = {
-          format: 'A4',
-          orientation: 'landscape',
-          border: {
-            top: '0.5in',
-            right: '0.5in',
-            bottom: '0.5in',
-            left: '0.5in'
-          }
-        };
+        doc.pipe(fs.createWriteStream(outputPath));
+        
+        // Add text content
+        doc.fontSize(10).text(textContent, {
+          width: 700,
+          align: 'left'
+        });
+        
+        doc.end();
 
-        pdf.create(htmlContent, options).toFile(outputPath, (err, result) => {
-          if (err) throw err;
+        // Wait for the PDF to be written
+        await new Promise((resolve, reject) => {
+          doc.on('end', resolve);
+          doc.on('error', reject);
+        });
 
-          // Clean up input file
-          fs.unlinkSync(inputPath);
+        // Clean up input file
+        fs.unlinkSync(inputPath);
 
-          res.json({
-            success: true,
-            message: 'Excel file converted to PDF successfully',
-            downloadUrl: `/uploads/${path.basename(outputPath)}`,
-            filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
-          });
+        res.json({
+          success: true,
+          message: 'Excel file converted to PDF successfully',
+          downloadUrl: `/uploads/${path.basename(outputPath)}`,
+          filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
         });
 
       } catch (error) {
@@ -280,31 +257,45 @@ router.post('/html-to-pdf', async (req, res) => {
         // Read HTML content
         const htmlContent = fs.readFileSync(inputPath, 'utf8');
 
-        // Convert HTML to PDF
-        const options = {
-          format: 'A4',
-          orientation: 'portrait',
-          border: {
-            top: '0.5in',
-            right: '0.5in',
-            bottom: '0.5in',
-            left: '0.5in'
-          },
-          timeout: 30000
-        };
+        // Simple HTML to text conversion (basic implementation)
+        const textContent = htmlContent
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove styles
+          .replace(/<[^>]+>/g, ' ') // Remove HTML tags
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
 
-        pdf.create(htmlContent, options).toFile(outputPath, (err, result) => {
-          if (err) throw err;
+        // Create PDF using PDFKit
+        const PDFDocument = require('pdfkit');
+        const doc = new PDFDocument({
+          size: 'A4',
+          margin: 50
+        });
 
-          // Clean up input file
-          fs.unlinkSync(inputPath);
+        doc.pipe(fs.createWriteStream(outputPath));
+        
+        // Add text content
+        doc.fontSize(12).text(textContent, {
+          width: 500,
+          align: 'left'
+        });
+        
+        doc.end();
 
-          res.json({
-            success: true,
-            message: 'HTML file converted to PDF successfully',
-            downloadUrl: `/uploads/${path.basename(outputPath)}`,
-            filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
-          });
+        // Wait for the PDF to be written
+        await new Promise((resolve, reject) => {
+          doc.on('end', resolve);
+          doc.on('error', reject);
+        });
+
+        // Clean up input file
+        fs.unlinkSync(inputPath);
+
+        res.json({
+          success: true,
+          message: 'HTML file converted to PDF successfully',
+          downloadUrl: `/uploads/${path.basename(outputPath)}`,
+          filename: `converted-${req.file.originalname.split('.')[0]}.pdf`
         });
 
       } catch (error) {
