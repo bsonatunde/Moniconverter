@@ -106,13 +106,19 @@ app.get('/api/health', (req, res) => {
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
 
-// Serve React app in production
+// Only serve React app if client build exists (for local development)
+// For production, frontend is served separately from Vercel
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/build')));
-  
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/build/index.html'));
-  });
+  const clientBuildPath = path.join(__dirname, '../client/build');
+  if (fs.existsSync(clientBuildPath)) {
+    app.use(express.static(clientBuildPath));
+    
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(clientBuildPath, 'index.html'));
+    });
+  } else {
+    console.log('Client build not found - running in API-only mode');
+  }
 }
 
 // Global error handler
